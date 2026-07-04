@@ -109,17 +109,29 @@ const products = [
 ];
 
 async function main() {
-  const passwordHash = await bcrypt.hash("admin123", 10);
+  // Override via env: ADMIN_EMAIL / ADMIN_PASSWORD.
+  // Re-running the seed updates the password — use it as a password reset.
+  const adminEmail = (process.env.ADMIN_EMAIL ?? "admin@apautoparts.com").toLowerCase();
+  const adminPassword = process.env.ADMIN_PASSWORD ?? "admin123";
+  const passwordHash = await bcrypt.hash(adminPassword, 10);
   await db.user.upsert({
-    where: { email: "admin@apautoparts.com" },
-    update: {},
+    where: { email: adminEmail },
+    update: { passwordHash },
     create: {
       name: "Admin",
-      email: "admin@apautoparts.com",
+      email: adminEmail,
       passwordHash,
       role: "OWNER",
     },
   });
+
+  // Sample catalog only on a fresh database — re-seeding (e.g. for a
+  // password reset) must not resurrect products the owner has removed.
+  const productCount = await db.product.count();
+  if (productCount > 0) {
+    console.log(`Admin user "${adminEmail}" is ready (password updated). Catalog left untouched.`);
+    return;
+  }
 
   const categoryIds = new Map<string, string>();
   for (const c of categories) {
@@ -152,7 +164,7 @@ async function main() {
     }
   }
 
-  console.log("Seed complete. Admin login: admin@apautoparts.com / admin123");
+  console.log(`Seed complete. Admin login: ${adminEmail} / ${process.env.ADMIN_PASSWORD ? "(your ADMIN_PASSWORD)" : "admin123"}`);
 }
 
 main()
