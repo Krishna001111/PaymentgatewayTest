@@ -4,16 +4,24 @@ import { mkdir, writeFile } from "fs/promises";
 import path from "path";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { put } from "@vercel/blob";
 import { db } from "@/lib/db";
 import { slugify } from "@/lib/format";
 import { requireAdmin } from "./guard";
 
 async function saveImage(file: File | null): Promise<string | null> {
   if (!file || file.size === 0) return null;
-  const uploadsDir = path.join(process.cwd(), "public", "uploads");
-  await mkdir(uploadsDir, { recursive: true });
   const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
   const fileName = `${Date.now()}-${safeName}`;
+
+  // On Vercel the filesystem is read-only, so uploads go to Blob storage.
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const blob = await put(`uploads/${fileName}`, file, { access: "public" });
+    return blob.url;
+  }
+
+  const uploadsDir = path.join(process.cwd(), "public", "uploads");
+  await mkdir(uploadsDir, { recursive: true });
   const bytes = Buffer.from(await file.arrayBuffer());
   await writeFile(path.join(uploadsDir, fileName), bytes);
   return `/uploads/${fileName}`;
