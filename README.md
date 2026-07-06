@@ -12,13 +12,26 @@ A full-stack web application for **AP Auto Parts**, an auto-parts manufacturing 
    - **Invoices & Payments** — generate GST tax invoices (CGST/SGST or IGST) from orders, print/save as PDF, record payments (UPI/NEFT/cheque/cash), track outstanding balances
    - **Reports** — monthly invoiced sales, top products, outstanding receivables per customer
 
-## Tech Stack
+## Tech Stack & Architecture
 
-- [Next.js](https://nextjs.org) (App Router, TypeScript) — public site + admin in one codebase
-- [Tailwind CSS](https://tailwindcss.com) v4
-- [Prisma](https://prisma.io) ORM with PostgreSQL
-- [NextAuth](https://next-auth.js.org) credentials login for the admin panel
-- [Vercel Blob](https://vercel.com/docs/storage/vercel-blob) for product image uploads in production (falls back to `public/uploads/` locally)
+A mainstream, low-cost **Next.js + TypeScript + PostgreSQL** stack, hosted on Vercel + Neon (both free-tier). Everything — the public website and the admin panel — is one codebase.
+
+| Layer | Technology |
+| --- | --- |
+| Framework | [Next.js 16](https://nextjs.org) (App Router) + [React 19](https://react.dev) + TypeScript |
+| Rendering | Server components + server actions (SSR — good for SEO and simpler data handling) |
+| Styling | [Tailwind CSS v4](https://tailwindcss.com) |
+| Database | [PostgreSQL](https://www.postgresql.org) (hosted on [Neon](https://neon.tech)) |
+| ORM / migrations | [Prisma 6](https://prisma.io) |
+| Auth | [NextAuth v4](https://next-auth.js.org) (credentials) + [bcryptjs](https://github.com/dcodeIO/bcrypt.js) password hashing |
+| Image uploads | [Vercel Blob](https://vercel.com/docs/storage/vercel-blob) in production; `public/uploads/` locally |
+| Hosting / CI | [Vercel](https://vercel.com) (auto-deploy + `prisma migrate deploy` on every push) |
+| Source control | GitHub |
+| Tooling (dev only) | [Playwright](https://playwright.dev) for end-to-end browser tests; Python/Pillow for the one-off catalogue image cropping |
+
+**How it fits together:** the browser hits a Next.js route → server components read data through Prisma from Postgres → mutations (create product, submit enquiry, generate invoice, import catalogue) run as auth-guarded **server actions** in `src/lib/actions/`. The admin area is gated by a NextAuth session; the public site is open. Quotations and invoices are print-optimized HTML pages ("Save as PDF" from the browser) rather than a PDF library.
+
+**Cost:** runs entirely on free tiers today; a custom domain (~₹800–1,000/year) is the only near-term cost. It's a common stack, so any Next.js developer can maintain it later.
 
 ## Getting Started
 
@@ -76,10 +89,17 @@ Drives a real browser through the whole business flow: public enquiry → admin 
 
 ```
 prisma/schema.prisma          # all data models (products, enquiries, orders, stock, invoices…)
-prisma/seed.ts                # admin user + sample catalog
+prisma/catalogue.json         # source of truth for the real product catalogue (44 TATA parts)
+prisma/seed.ts                # admin user + catalogue (reads catalogue.json)
+scripts/import-catalogue.sql  # same catalogue as raw SQL (alternative to the admin importer)
+public/products/tata/         # committed product images
 src/app/(public)/             # website: home, about, products, contact
-src/app/admin/                # admin panel (login + guarded dashboard)
+src/app/admin/                # admin panel (login + guarded dashboard, incl. Import Catalogue)
 src/lib/actions/              # server actions (all mutations, auth-guarded)
 src/lib/                      # db client, auth config, company details, helpers
 src/components/               # shared UI components
 ```
+
+The product catalogue lives in one place — `prisma/catalogue.json`. Both the seed
+(`prisma/seed.ts`) and the in-app importer (`src/lib/actions/import.ts`, surfaced at
+`/admin/import`) load from it, so they never drift.
